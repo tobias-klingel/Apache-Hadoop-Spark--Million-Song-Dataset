@@ -1,0 +1,24 @@
+#Overview of the available tables
+sql("show tables").show()
+
+#Declare and initialize the DataFrame object
+val data1 = sql("select title, track_id, timbre_0 from msd10k_timbre")
+
+#Get general statistical information for numeric columns with .describe ()
+data1.select("timbre_0").describe().show
+
+#Get how many different TrackIds are there in the table
+data1.select("track_id").distinct().count()
+
+#Show (Count) how many different titles there are in the table
+data1.select("title").distinct().count()
+
+#Find which title has the least timbres
+data1.select("track_id", "title").groupBy("track_id", "title").count().select("title","count").orderBy("count").show(1,false)
+
+#Which title has the most timbres?
+data1.select("track_id", "title").groupBy("track_id", "title").count().select("title","count").orderBy(desc("count")).show(1,false)
+
+#A track has an average of X timbres?
+data1.select("track_id").groupBy("track_id").count().agg(avg("count")).show()
+                                                               
