@@ -1,0 +1,36 @@
+import org.apache.spark.ml.feature.Bucketizer
+
+//Determine minimum value Data Frame data1
+val data2_min = data1.select("timbre_0").orderBy("timbre_0").first().getDouble(0)
+
+//Determine maximum value
+var data2_max = data1.select("timbre_0").orderBy(desc("timbre_0")).first().getDouble(0)
+
+//Determine bin limits
+val data2_splits = data2_min to data2_max by (data2_max/10) toArray
+
+//Initialize bucketizer
+val bucketizer = new Bucketizer().setInputCol("timbre_0").setOutputCol("timbre_0_bin").setSplits(data2_splits)
+
+//Binning the timbre 0 value across the segments of all tracks
+val bucketData = bucketizer.transform(data1)
+
+//Save result
+bucketData.write.mode("overwrite").saveAsTable("data2_bucketeddata")
+
+
+#Test the result. (Maximum value was 62.0)
+bucketData.filter(bucketData("timbre_0") > 62.0 ).show(5,false)
+
+#Show the number of timbre values in each bin
+#bucketData.select("timbre_0_bin").groupBy("timbre_0_bin").count().show()
+
+#Create Profile Vector per Track 
+val data2_bucketeddata = sql("select track_id, timbre_0, timbre_0_bin from data2_bucketeddata")
+
+
+#Generate 10 bins of equal width
+val newNames = Seq("track_id","bin1","bin2","bin3","bin4","bin5","bin6","bin7","bin8","bin9","bin10")
+
+//Create profile vectors
+val data2_profilevectors = data2_bucketeddata.select("track_id","timbre_0_bin").groupBy("track_id","timbre_0_bin").pivot("timbre_0_bin").agg(count("timbre_0_bin")).drop("timbre_0_bin").toDF(newNames: _*).groupBy("track_id").max().toDF(newNames: _*)
