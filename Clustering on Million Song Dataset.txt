@@ -1,0 +1,63 @@
+import spark.implicits._
+import org.apache.spark.mllib.clustering.KMeans
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
+
+
+#Read table in variable:
+val isttoklin_profilvectorJO = sql("select * from data3_profilevector")
+
+#Creating the predictors variable:
+val isttoklin_kMeansTOMap = isttoklin_profilvectorJO.rdd.map(
+	row => Vectors.dense(
+				row.getDouble(1),
+				row.getDouble(2),
+				row.getDouble(3),
+				row.getDouble(4),
+				row.getDouble(5),
+				row.getDouble(6),
+				row.getDouble(7),
+				row.getDouble(8),
+				row.getDouble(10)
+			)
+		).cache()
+
+#To be issued as a test:
+isttoklin_kMeansTOMap.take(5).foreach(println)
+
+#Generation of the cluster model:
+val itrationCount = 500
+val clusterNumber = 10
+val isttoklin_clusterModel = KMeans.train(isttoklin_kMeansTOMap, clusterNumber, itrationCount)
+
+#Save table:
+isttoklin_clusterModel.save(sc, "hdfs://xxx.xxx.xxx.xxx:54310/isttoklin/isttoklin/testmodel")
+##########################################################
+
+#Compactness of the cluster:
+#A model with 10 clusters and 500 iterations has:
+isttoklin_clusterModel.computeCost(isttoklin_kMeansTOMap)
+#res4: Double = 232.3220488930701
+
+#A model with 20 clusters and 500 iterations has:
+data3_clustermodel20_500.computeCost(isttoklin_kMeansTOMap)
+#res4: Double = 131.18937820114593
+data3_clustermodel20_500.save(sc, "hdfs://bd-master:54310/user/data3/testmodel20_500")
+
+#A model with 190 clusters and 1000 iterations has:
+data3_clustermodel190_1000.computeCost(isttoklin_kMeansTOMap)
+#res4: Double = 29.51879326281383
+data3_clustermodel190_1000.save(sc, "hdfs://bd-master:54310/user/data3/testmodel190_1000")
+
+
+##########################################################
+#Apply the models to the profile vector.
+#Create Case-Class (the first two attributes would be sufficient due to Join capability with Profile Vector).
+case class KMeansTO(cluster_id: Int, track_id: String, bin1: Double, bin2: Double, bin3: Double, bin4: Double, bin5: Double, bin6: Double, bin7: Double, bin8: Double, bin9: Double, bin10: Double)
+
+#Applying the model with 20 cluster nodes (assuming clusters node and track_id in the table would have been sufficient, due to join option with profile vector).
+val data3_kMeansTOMap20_500 = data3_profilvector.map{row => KmeansTO(data3_clustermodel20_500.predict(Vectors.dense(row.getDouble(1),row.getDouble(2),row.getDouble(3),row.getDouble(4),row.getDouble(5),row.getDouble(6),row.getDouble(7),row.getDouble(8),row.getDouble(9),row.getDouble(10))),row.getString(0),row.getDouble(1),row.getDouble(2),row.getDouble(3),row.getDouble(4),row.getDouble(5),row.getDouble(6),row.getDouble(7),row.getDouble(8),row.getDouble(9),row.getDouble(10))}
+
+#The application of the "data3_clustermodel190_1000" model has been done analogously and both tables have been saved.
+data3_kMeansTOMap20_500.write.mode("overwrite").saveAsTable("data3_kMeansTOMap20_500")
+
+data3_kMeansTOMap190_1000.write.mode("overwrite").saveAsTable("data3_kMeansTOMap190_1000")
