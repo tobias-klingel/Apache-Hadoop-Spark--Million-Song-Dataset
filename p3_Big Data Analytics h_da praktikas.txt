@@ -1,0 +1,94 @@
+import org.apache.spark.ml.feature.VectorAssembler 
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.feature.VectorIndexer 
+import spark.implicits._
+
+#Read Table
+val hot_trainDATA = sql("select * from alltraining_hotness")
+
+#Generate feature vector
+val VecAssembler = new VectorAssembler().setInputCols(Array("key", "mode","time_signature","loudness","tempo","year")).setOutputCol(" features")
+val InputAndFeatures = VecAssembler.transform(hot_trainDATA)
+val data_modelInput = InputAndFeatures.select("song_hotttnesss","features")
+
+#Set skale types
+#-> In case more then 13 categories exist the scaling will be steady	
+val featureIndexer = new VectorIndexer().setInputCol("features").setOutputCol("indexedFeatu res").setMaxCategories(13).fit(data_modelInput)
+
+#####################################################################################
+###Model creation - Decision Tree Regression
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.evaluation.RegressionEvaluator
+import org.apache.spark.ml.feature.VectorIndexer
+import org.apache.spark.ml.regression.DecisionTreeRegressionModel 
+import org.apache.spark.ml.regression.DecisionTreeRegressor
+
+#Trainings- and test data 70%/30%
+val Array(trainingData, testData) = data_modelInput.randomSplit(Array(0.7, 0.3))
+
+#Train with test data the Decision Tree Regression model
+val data_dt = new DecisionTreeRegressor().setLabelCol("song_hotttnesss").setFeatures Col("indexedFeatures")
+val data_pipeline = new Pipeline().setStages(Array(featureIndexer, data_dt))
+val data_model = data_pipeline.fit(trainingData)
+
+#Create prediction model
+val data_predictions = data_model.transform(testData)
+
+#Calculate the Root Mean Squared Error (rmse)
+val data_evaluator = new RegressionEvaluator().setLabelCol("song_hotttnesss").setPrediction Col("prediction").setMetricName("rmse")
+val data_rmse = data_evaluator.evaluate(data_predictions)
+println(data_rmse)
+
+#Creation of the decision tree and print it
+val data_treeModel = data_model.stages(1).asInstanceOf[DecisionTreeRegressionModel ]
+println(data_treeModel.toDebugString)
+
+
+#####################################################################################
+####Create decision tree classifier
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.DecisionTreeClassificationModel 
+import org.apache.spark.ml.classification.DecisionTreeClassifier 
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator 
+import org.apache.spark.ml.feature.{IndexToString, StringIndexer, VectorIndexer}
+import org.apache.spark.ml.feature.Bucketizer
+
+
+#Binning on data_modelInput variable
+val data_min = data_modelInput.select("song_hotttnesss").orderBy("song_hottt nesss").first().getDouble(0)
+val data_max = data_modelInput.select("song_hotttnesss").orderBy(desc("song_ hotttnesss")).first().getDouble(0)
+var data_splits = data_min to data_max by (data_max/10) toArray
+//aufgrund von eigenartigem Fehler...
+data_splits = data_splits :+ Double.PositiveInfinity
+val data_bucketizer = new Bucketizer().setInputCol("song_hotttnesss").setOutputCol("hotbin") .setSplits(data_splits)
+val data_bucketData = data_bucketizer.transform(data_modelInput)
+
+
+#Create Decision Tree Classifier model on binning data
+val data_labelIndexer = new StringIndexer().setInputCol("hotbin").setOutputCol("indexedhot_bin ").fit(data_bucketData)
+val data_featureIndexer = new VectorIndexer().setInputCol("features").setOutputCol("indexedFeatu res").setMaxCategories(10).fit(data_bucketData)
+val Array (data_trainingData, data_testData) = data_bucketData.randomSplit(Array(0.7, 0.3))
+val data_dt = new DecisionTreeClassifier().setLabelCol("indexedhot_bin").setFeatures Col("indexedFeatures")
+val data_labelConverter = new IndexToString().setInputCol("prediction").setOutputCol("prediction Label").setLabels(data_labelIndexer.labels)
+val data_pipeline = new Pipeline().setStages(Array(data_labelIndexer,data_featur eIndexer,data_dt,data_labelConverter))
+val data_model = data_pipeline.fit(data_trainingData)
+
+#Decision Tree Classifier model
+val data_predictions = data_model.transform(data_testData)
+data_predictions.select("hotbin","features","predictionLabel" ).show(5)
+
+
+#Calculation of quality indicators:
+ val data_evaluator = new MulticlassClassificationEvaluator().setLabelCol("indexedhot_bin"). setPredictionCol("prediction").setMetricName("accuracy")
+val data_accuracy = data_evaluator.evaluate(data_predictions) data_accuracy: Double = 0.22771250863856254
+val evaluator = new MulticlassClassificationEvaluator().setLabelCol("indexedhot_bin"). setPredictionCol("prediction").setMetricName("weightedPrecision")
+val data_precision = evaluator.evaluate(predictions) data_precision: Double = 0.19074629753951117
+val evaluator = new MulticlassClassificationEvaluator().setLabelCol("indexedhot_bin"). setPredictionCol("prediction").setMetricName("weightedRecall")
+val data_recall = evaluator.evaluate(data_predictions) data_recall: Double = 0.22771250863856254 
+//f1
+val evaluator = new MulticlassClassificationEvaluator().setLabelCol("indexedhot_bin"). setPredictionCol("prediction")
+val data_f1 = evaluator.evaluate(predictions) data_f1: Double = 0.15975846377013644
+
+#Creation of the decision tree:
+val data_treeModel = data_model.stages(2).asInstanceOf[DecisionTreeClassificationM odel]
+println(data_treeModel.toDebugString)
